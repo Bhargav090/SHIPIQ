@@ -1,108 +1,80 @@
 # ShipIQ — Cargo Optimization Service
 
-A Node.js REST API that allocates maritime cargo into vessel tanks. Given a list of cargos (with volumes) and tanks (with capacities), the service figures out how to load **as much cargo as possible** while respecting the problem constraints.
+Node.js service for the SHIPIQ assignment. You send in a list of cargos and tanks, run the optimizer, and get back which cargo goes into which tank.
 
-Built for the SHIPIQ senior engineer assignment.
+The goal is simple: load as much cargo volume as possible.
 
----
+## The problem (in short)
 
-## Problem (quick recap)
+You have cargos with volumes and tanks with capacities. Three rules matter:
 
-| Rule | Meaning |
-|------|---------|
-| Cargo splitting allowed | One cargo can be spread across multiple tanks |
-| One cargo per tank | Each tank holds only a single cargo ID (no mixing) |
-| Objective | Maximize total loaded cargo volume |
+- A cargo can be split across multiple tanks
+- But each tank can only hold one cargo ID (no mixing C3 and C7 in the same tank)
+- Maximize total loaded volume
 
----
+## How I solved it
 
-## Approach & algorithm
+I used a greedy approach with sorting. Nothing fancy like ILP — wanted something fast, easy to test, and easy to explain in a walkthrough.
 
-I went with a **greedy allocator + sorting** rather than full mathematical optimization (ILP / branch-and-bound).
+Here's what the allocator does:
 
-### Why greedy?
+1. Sort cargos biggest → smallest
+2. Sort tanks biggest → smallest
+3. For each cargo, grab the next free tank(s) and put in `min(remaining cargo, tank capacity)` until that cargo is done or tanks run out
 
-- **Fast** — sorts + single pass, handles 10k+ items in milliseconds
-- **Easy to reason about** in an interview walkthrough
-- **Good enough** for most real loading scenarios when you prioritise large cargos into large tanks
+The actual logic lives in `src/domain/CargoOptimizer.js`. It's a pure function — no HTTP, no database — so unit tests are straightforward.
 
-### Steps
+### Why not exact optimization?
 
-1. Sort cargos by volume **descending** (biggest first)
-2. Sort tanks by capacity **descending** (biggest first)
-3. For each cargo, assign it to the next available tank(s) until:
-   - the cargo is fully loaded, or
-   - we run out of tanks
+Greedy won't guarantee the mathematically perfect answer in every edge case. But it's O(n log n), runs fine on 10k+ items (there's a test for that), and the API stays responsive. If we ever need provably optimal results, I'd only swap the domain layer and keep routes/services as they are.
 
-Each tank gets `min(remaining cargo, tank capacity)` and is then marked used.
+### One thing I had to assume
 
-### Trade-offs
+The assignment PDF lists the same C1–C10 table under "Tanks" — pretty sure that's a copy-paste mistake. I treated tanks as separate entities (T1–T10) with their own capacities. Sample data is in `src/domain/types.js`. You can also POST your own via the API.
 
-| Greedy + sorting | Exact optimization (ILP) |
-|------------------|--------------------------|
-| O(C log C + T log T) | Can be much slower |
-| Simple to extend | Harder to maintain |
-| May miss global optimum in edge cases | Guaranteed optimal |
+Other assumptions: positive integer volumes, in-memory session store (fine for single instance), no auth on endpoints.
 
-If the business later needs provably optimal allocations, I'd swap the domain layer (`CargoOptimizer.js`) for an ILP solver and keep the API unchanged.
-
----
-
-## Assumptions
-
-1. **Tank data in the brief** — the assignment PDF repeats the cargo table under "Tanks". I assumed tanks are separate entities (`T1`–`T10`) with their own capacities. Sample tanks are in `src/domain/types.js`.
-2. **Volumes are positive numbers** — no fractional cubic units in v1.
-3. **Single-instance memory store** — one optimization session in memory. Fine for demo; use Redis/DB for multi-instance production.
-4. **One cargo ID per tank** — even if a tank isn't full, it can't be shared with another cargo.
-5. **Input via API** — no hard dependency on the sample C1–C10 list; any valid payload works.
-
----
-
-## Project structure
+## Project layout
 
 ```
 src/
-  config/          → env-based configuration
-  domain/          → pure business logic (optimizer, validation)
-  services/        → orchestration layer
-  store/           → in-memory session state
-  api/             → routes + middleware
-  utils/           → logging
-public/            → simple visualization UI
+  domain/       CargoOptimizer + input validation
+  services/     ties domain logic to the store
+  store/        in-memory input/results (swap for Redis later)
+  api/          routes + middleware
+  config/       env vars
+  utils/        winston logger
+public/         simple UI
 tests/
-  unit/            → optimizer + validation tests
-  integration/     → full API flow tests
+  unit/         optimizer + validation
+  integration/  full API flow
 ```
 
-Clean separation: routes don't know about algorithm details; the optimizer doesn't know about HTTP.
+Routes don't touch the algorithm directly. Optimizer doesn't know about Express. That was intentional — makes testing and future changes easier.
 
----
+## API
 
-## API endpoints
+Base URL locally: `http://localhost:3000`
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/input` | Submit cargo + tank data |
-| `POST` | `/input/sample` | Load assignment demo data |
-| `POST` | `/optimize` | Run allocation on stored input |
-| `GET` | `/results` | Get last optimization result |
-| `GET` | `/health` | Health check (Docker / cloud) |
-| `GET` | `/` | Web UI |
+| Endpoint | What it does |
+|----------|--------------|
+| `POST /input` | Send your cargo + tank JSON |
+| `POST /input/sample` | Load the C1–C10 demo data from the brief |
+| `POST /optimize` | Run allocation on whatever was last saved |
+| `GET /results` | Fetch the last optimization output |
+| `POST /reset` | Clear saved input and results |
+| `GET /health` | Health check for Docker/cloud |
+| `GET /` | Basic UI to load data and see results |
 
-### Example: full flow
+Typical flow:
 
 ```bash
-# 1. Load sample data
 curl -X POST http://localhost:3000/input/sample
-
-# 2. Run optimizer
 curl -X POST http://localhost:3000/optimize
-
-# 3. Fetch results
 curl http://localhost:3000/results
 ```
 
-### Custom input
+Custom input example:
 
 ```bash
 curl -X POST http://localhost:3000/input \
@@ -120,39 +92,32 @@ curl -X POST http://localhost:3000/input \
   }'
 ```
 
----
+Call `/optimize` after `/input`. Results get cleared if you POST new input — didn't want stale data hanging around.
 
-## Setup & run locally
+## Run locally
 
-### Prerequisites
-
-- Node.js 18+ (20 recommended)
-- npm
-
-### Install & run
+Need Node 18+ (I used 20).
 
 ```bash
 cp .env.example .env
 npm install
+npm test        # run this first — should see 25 passing
 npm start
 ```
 
-Dev mode with auto-reload (Node 18+):
+Server starts on port 3000. Open http://localhost:3000 for the UI.
+
+Dev mode with file watching:
 
 ```bash
 npm run dev
 ```
 
-Open **http://localhost:3000** for the UI.
-
-### Run tests
+Test coverage if you want it:
 
 ```bash
-npm test
 npm run test:coverage
 ```
-
----
 
 ## Docker
 
@@ -160,76 +125,32 @@ npm run test:coverage
 docker compose up --build
 ```
 
-API + UI at http://localhost:3000
+Same port, same endpoints. Healthcheck hits `/health` inside the container.
 
----
+## Deploy (optional)
 
-## Cloud deployment
+Included configs for Fly.io and Render if you want a live URL.
 
-Configs included for **Fly.io** and **Render**.
+**Fly.io** — `fly launch` then `fly deploy`
 
-### Fly.io
+**Render** — connect the GitHub repo, it picks up `render.yaml`. Set health check path to `/health`.
 
-```bash
-# install flyctl, then:
-fly launch    # pick app name + region
-fly deploy
-```
+## Logging
 
-Your live URL will look like: `https://shipiq-cargo-optimizer.fly.dev`
+Using Winston. Every request and optimization run gets logged. Log level is controlled via `LOG_LEVEL` in `.env` (default `info`). There's also basic rate limiting (100 req/min per IP) so a public deploy doesn't get hammered.
 
-### Render
-
-1. Push repo to GitHub
-2. New → Blueprint → connect repo (uses `render.yaml`)
-3. Deploy
-
-Health check path: `/health`
-
----
-
-## Logging & monitoring
-
-- **Winston** structured logs on every request and optimization run
-- **`GET /health`** — uptime + timestamp for load balancers
-- **Rate limiting** — 100 req/min per IP (configurable via env)
-
-Env vars (see `.env.example`):
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `PORT` | 3000 | Server port |
-| `LOG_LEVEL` | info | Log verbosity |
-| `RATE_LIMIT_MAX` | 100 | Max requests per window |
-
----
+Env vars are in `.env.example` — `PORT`, `LOG_LEVEL`, `RATE_LIMIT_MAX`, etc.
 
 ## UI
 
-A lightweight static page at `/` lets you:
+Plain HTML page at `/`. Load sample data, hit optimize, see summary numbers and tank fill bars. No React, no build step — just static files served by Express.
 
-1. Load sample data
-2. Run optimization
-3. See summary stats, tank fill bars, and allocation table
+## If I had more time
 
-No build step — plain HTML/CSS/JS served by Express.
-
----
-
-## Large datasets
-
-The greedy approach scales well. There's a unit test that runs 10k cargos × 10k tanks and expects completion under 5 seconds. Sorting dominates; allocation is a single linear walk.
-
----
-
-## What I'd do next (production hardening)
-
-- Persist sessions in Redis
-- Auth on `/input` and `/optimize`
-- Prometheus metrics endpoint
-- Optional ILP backend behind a feature flag
-
----
+- Redis for session storage (multi-instance deploys)
+- Auth on write endpoints
+- Metrics endpoint (Prometheus-style)
+- Try ILP behind a flag and compare results vs greedy
 
 ## License
 

@@ -111,6 +111,23 @@ describe('API integration', () => {
     });
   });
 
+  describe('POST /reset', () => {
+    it('clears input and results', async () => {
+      await request(app).post('/input/sample');
+      await request(app).post('/optimize');
+
+      const resetRes = await request(app).post('/reset');
+      expect(resetRes.status).toBe(200);
+      expect(resetRes.body.data.cleared).toBe(true);
+
+      const optimizeRes = await request(app).post('/optimize');
+      expect(optimizeRes.status).toBe(400);
+
+      const resultsRes = await request(app).get('/results');
+      expect(resultsRes.status).toBe(404);
+    });
+  });
+
   describe('full workflow', () => {
     it('input → optimize → results flow works end to end', async () => {
       const inputRes = await request(app).post('/input/sample');

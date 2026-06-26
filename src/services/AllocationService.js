@@ -60,6 +60,12 @@ class AllocationService {
     logger.info('Sample data loaded');
     return { cargoCount: cargos.length, tankCount: tanks.length };
   }
+
+  reset() {
+    sessionStore.reset();
+    logger.info('Session reset');
+    return { cleared: true };
+  }
 }
 
 module.exports = new AllocationService();

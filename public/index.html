@@ -76,6 +76,8 @@
 
     button:hover { filter: brightness(1.1); }
     button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    button.danger { background: transparent; color: #fca5a5; border: 1px solid #7f1d1d; }
+    button.danger:hover { background: #450a0a; }
 
     .status {
       padding: 0.75rem 1rem;
@@ -173,6 +175,7 @@
         <button id="btnCustom">Use custom JSON</button>
         <button id="btnOptimize">Run optimization</button>
         <button class="secondary" id="btnRefresh">Refresh results</button>
+        <button class="danger" id="btnReset">Clear & reset</button>
       </div>
       <div id="status" class="status"></div>
 
@@ -248,6 +251,17 @@
       }
     };
     document.querySelector('.actions').appendChild(btnSubmitCustom);
+
+    function clearDisplay() {
+      $('summaryCard').style.display = 'none';
+      $('tankCard').style.display = 'none';
+      $('allocCard').style.display = 'none';
+      $('summaryGrid').innerHTML = '';
+      $('tankTableWrap').innerHTML = '';
+      $('allocTableWrap').innerHTML = '';
+      $('customInput').style.display = 'none';
+      $('jsonInput').value = '';
+    }
 
     function renderSummary(summary) {
       $('summaryCard').style.display = 'block';
@@ -350,6 +364,18 @@
         const res = await api('/results');
         renderResults(res.data);
         showStatus('Results refreshed from server');
+      } catch (e) {
+        showStatus(e.message, 'error');
+      }
+    };
+
+    $('btnReset').onclick = async () => {
+      if (!confirm('Clear all input and results?')) return;
+
+      try {
+        await api('/reset', { method: 'POST' });
+        clearDisplay();
+        showStatus('Cleared. Load new data to start again.');
       } catch (e) {
         showStatus(e.message, 'error');
       }

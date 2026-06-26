@@ -40,11 +40,11 @@ function createApp() {
     });
   });
 
-  // Simple UI for visualizing allocations
-  app.use(express.static(path.join(__dirname, '..', 'public')));
-
-  // API routes
+  // API routes first — before static files
   app.use('/', apiRoutes);
+
+  // UI static files
+  app.use(express.static(path.join(__dirname, '..', 'public')));
 
   // 404 for unknown API paths
   app.use((req, res) => {
