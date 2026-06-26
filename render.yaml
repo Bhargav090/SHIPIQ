@@ -1,0 +1,14 @@
+# Render.com blueprint — connect repo and deploy as Web Service
+services:
+  - type: web
+    name: shipiq-cargo-optimizer
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: 3000

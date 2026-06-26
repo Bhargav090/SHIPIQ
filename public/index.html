@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ShipIQ — Cargo Optimizer</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --success: #4ade80;
+      --warn: #fbbf24;
+      --border: #334155;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: #0b1220;
+    }
+
+    header h1 { font-size: 1.4rem; font-weight: 600; }
+    header p { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; }
+
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem;
+      display: grid;
+      gap: 1.25rem;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+    }
+
+    .card h2 {
+      font-size: 1rem;
+      margin-bottom: 1rem;
+      color: var(--accent);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    button {
+      background: var(--accent);
+      color: #0f172a;
+      border: none;
+      padding: 0.55rem 1rem;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    button:hover { filter: brightness(1.1); }
+    button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+
+    .status {
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .status.show { display: block; }
+    .status.info { background: #164e63; }
+    .status.error { background: #7f1d1d; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .stat {
+      background: #0f172a;
+      border-radius: 8px;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+    }
+
+    .stat .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .stat .value { font-size: 1.3rem; font-weight: 700; margin-top: 0.2rem; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.55rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th { color: var(--muted); font-weight: 500; }
+
+    .bar-cell { width: 40%; }
+
+    .bar-wrap {
+      background: #0f172a;
+      border-radius: 4px;
+      height: 18px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #0ea5e9, #4ade80);
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
+
+    .empty-state { color: var(--muted); font-size: 0.9rem; padding: 1rem 0; }
+
+    textarea {
+      width: 100%;
+      min-height: 140px;
+      background: #0f172a;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.75rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.8rem;
+      resize: vertical;
+    }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+    @media (max-width: 700px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ShipIQ Cargo Optimizer</h1>
+    <p>Load cargos into vessel tanks — split allowed, one cargo type per tank</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Actions</h2>
+      <div class="actions">
+        <button id="btnSample">Load sample data</button>
+        <button id="btnCustom">Use custom JSON</button>
+        <button id="btnOptimize">Run optimization</button>
+        <button class="secondary" id="btnRefresh">Refresh results</button>
+      </div>
+      <div id="status" class="status"></div>
+
+      <div class="two-col" id="customInput" style="display:none;">
+        <div>
+          <label for="jsonInput">Custom input JSON</label>
+          <textarea id="jsonInput" placeholder='{"cargos":[{"id":"C1","volume":100}],"tanks":[{"id":"T1","capacity":200}]}'></textarea>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="summaryCard" style="display:none;">
+      <h2>Summary</h2>
+      <div class="summary-grid" id="summaryGrid"></div>
+    </section>
+
+    <section class="card" id="tankCard" style="display:none;">
+      <h2>Tank utilization</h2>
+      <div id="tankTableWrap"></div>
+    </section>
+
+    <section class="card" id="allocCard" style="display:none;">
+      <h2>Allocations</h2>
+      <div id="allocTableWrap"></div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function showStatus(msg, type = 'info') {
+      const el = $('status');
+      el.textContent = msg;
+      el.className = `status show ${type}`;
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.message || 'Request failed');
+      return body;
+    }
+
+    $('btnSample').onclick = async () => {
+      try {
+        showStatus('Loading sample data...');
+        await api('/input/sample', { method: 'POST' });
+        showStatus('Sample data loaded. Hit "Run optimization".');
+      } catch (e) {
+        showStatus(e.message, 'error');
+      }
+    };
+
+    $('btnCustom').onclick = () => {
+      $('customInput').style.display = 'block';
+      showStatus('Paste JSON below, then click "Submit custom input".');
+    };
+
+    // Extra button for submitting custom JSON (added in actions row via JS)
+    const btnSubmitCustom = document.createElement('button');
+    btnSubmitCustom.textContent = 'Submit custom input';
+    btnSubmitCustom.className = 'secondary';
+    btnSubmitCustom.onclick = async () => {
+      try {
+        const payload = JSON.parse($('jsonInput').value);
+        await api('/input', { method: 'POST', body: JSON.stringify(payload) });
+        showStatus('Custom input saved. Now run optimization.');
+      } catch (e) {
+        showStatus(e.message, 'error');
+      }
+    };
+    document.querySelector('.actions').appendChild(btnSubmitCustom);
+
+    function renderSummary(summary) {
+      $('summaryCard').style.display = 'block';
+      $('summaryGrid').innerHTML = [
+        ['Total loaded', summary.totalLoaded],
+        ['Cargo available', summary.totalCargoAvailable],
+        ['Tank capacity', summary.totalTankCapacity],
+        ['Unloaded cargo', summary.unloadedVolume],
+        ['Tanks used', `${summary.tanksUsed} / ${summary.tanksAvailable}`],
+        ['Cargo utilization', `${summary.cargoUtilizationPercent}%`],
+        ['Tank utilization', `${summary.tankUtilizationPercent}%`],
+        ['Limiting factor', summary.limitingFactor],
+      ].map(([label, value]) => `
+        <div class="stat">
+          <div class="label">${label}</div>
+          <div class="value">${value}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderTanks(tankBreakdown) {
+      $('tankCard').style.display = 'block';
+      if (!tankBreakdown.length) {
+        $('tankTableWrap').innerHTML = '<p class="empty-state">No tanks</p>';
+        return;
+      }
+
+      $('tankTableWrap').innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Tank</th>
+              <th>Cargo</th>
+              <th>Loaded / Capacity</th>
+              <th class="bar-cell">Fill</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tankBreakdown.map((t) => `
+              <tr>
+                <td>${t.tankId}</td>
+                <td>${t.cargoId || '—'}</td>
+                <td>${t.loadedVolume} / ${t.capacity}</td>
+                <td class="bar-cell">
+                  <div class="bar-wrap">
+                    <div class="bar-fill" style="width:${t.utilizationPercent}%"></div>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderAllocations(allocations) {
+      $('allocCard').style.display = 'block';
+      if (!allocations.length) {
+        $('allocTableWrap').innerHTML = '<p class="empty-state">No allocations</p>';
+        return;
+      }
+
+      $('allocTableWrap').innerHTML = `
+        <table>
+          <thead>
+            <tr><th>Tank</th><th>Cargo</th><th>Volume</th></tr>
+          </thead>
+          <tbody>
+            ${allocations.map((a) => `
+              <tr>
+                <td>${a.tankId}</td>
+                <td>${a.cargoId}</td>
+                <td>${a.volume}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderResults(data) {
+      renderSummary(data.summary);
+      renderTanks(data.tankBreakdown);
+      renderAllocations(data.allocations);
+    }
+
+    $('btnOptimize').onclick = async () => {
+      try {
+        showStatus('Running optimizer...');
+        const res = await api('/optimize', { method: 'POST' });
+        renderResults(res.data);
+        showStatus(`Done in ${res.data.meta.durationMs}ms — loaded ${res.data.summary.totalLoaded} units`);
+      } catch (e) {
+        showStatus(e.message, 'error');
+      }
+    };
+
+    $('btnRefresh').onclick = async () => {
+      try {
+        const res = await api('/results');
+        renderResults(res.data);
+        showStatus('Results refreshed from server');
+      } catch (e) {
+        showStatus(e.message, 'error');
+      }
+    };
+  </script>
+</body>
+</html>
